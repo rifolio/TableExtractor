@@ -3,8 +3,12 @@ matplotlib==3.10.0
 numpy==2.0.2
 pandas==2.2.2
 pillow==11.2.1
-torch==2.6.0+cu124
-torchaudio==2.6.0+cu124
-torchvision==0.21.0+cu124
+
+# CPU-only PyTorch builds
+torch==2.6.0+cpu
+torchaudio==2.6.0+cpu
+torchvision==0.21.0+cpu
+
 tqdm==4.67.1
 transformers==4.52.4
+easyocr==1.7.2
