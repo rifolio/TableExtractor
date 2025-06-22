@@ -1,40 +1,27 @@
-import numpy as np
-import pandas as pd
-import matplotlib
-from PIL import Image
-import torch, torchaudio, torchvision
-import transformers
-import huggingface_hub
-import easyocr
-from tqdm import tqdm
+import sys
+from pathlib import Path
+from pdf_reader import PDFReader
 
 def main():
-    print("=== Library Versions ===")
-    print(f"numpy:           {np.__version__}")
-    print(f"pandas:          {pd.__version__}")
-    print(f"matplotlib:      {matplotlib.__version__}")
-    print(f"Pillow:          {Image.__version__}")
-    print(f"torch:           {torch.__version__}")
-    print(f"torchaudio:      {torchaudio.__version__}")
-    print(f"torchvision:     {torchvision.__version__}")
-    print(f"transformers:    {transformers.__version__}")
-    print(f"huggingface_hub: {huggingface_hub.__version__}")
-    print(f"easyocr:         {easyocr.__version__}")
-    print("\n=== Quick CPU Tests ===")
-    # Numpy array
-    arr = np.linspace(0, 1, 5)
-    print("numpy linspace:", arr)
+    # project root is three levels up from scr/app/main.py
+    base_dir = Path(__file__).resolve().parent.parent.parent
 
-    # Torch tensor
-    t = torch.arange(5)
-    print("torch tensor:", t)
+    # point at your test PDF in <project-root>/pdfs/test.pdf
+    pdf_file = base_dir / 'pdfs' / 'test.pdf'
+    if not pdf_file.is_file():
+        print(f"Error: test PDF not found at {pdf_file}", file=sys.stderr)
+        sys.exit(1)
 
-    # TQDM progress bar
-    print("tqdm demo:")
-    for i in tqdm(range(3), desc="Loop"):
-        pass
+    try:
+        reader = PDFReader(str(pdf_file))
+        # by default this writes into <project-root>/images/<pdf_name>/
+        images = reader.convert_to_images()
+        print(f"Converted '{pdf_file.name}' into {len(images)} images:")
+        for img_path in images:
+            print(f"  • {img_path}")
+    except Exception as e:
+        print(f"Conversion failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    print("\nAll checks passed!")
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
