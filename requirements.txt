@@ -9,9 +9,15 @@ torch==2.6.0+cpu
 torchaudio==2.6.0+cpu
 torchvision==0.21.0+cpu
 
+# For loading local models
+timm==1.0.15
+
 tqdm==4.67.1
 transformers==4.52.4
 easyocr==1.7.2
 
 pymupdf
 pillow==11.2.1
+
+# Python notebooks
+ipykernel
