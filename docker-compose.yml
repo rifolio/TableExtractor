@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    # On your 4-core i7, you can set thread limits if you like
+    environment:
+      OMP_NUM_THREADS: 4
+      MKL_NUM_THREADS: 4
+    volumes:
+      - ./:/app
+    working_dir: /app
+    # stdin_open: true   # -i
+    # tty: true          # -t
+    command: ["python", "-u", "src/app/main.py"]
