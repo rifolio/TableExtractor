@@ -6,6 +6,9 @@ import torch
 from transformers import AutoModelForObjectDetection, TableTransformerForObjectDetection
 from huggingface_hub import snapshot_download
 from torchvision import transforms
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.patches import Patch
 
 
 def ensure_local_model(repo_id: str, folder_name: str) -> Path:
@@ -76,6 +79,69 @@ def extract_table_structure_data(cells):
     return {'table_rows': rows, 'table_columns': cols}
 
 
+def fig2img(fig):
+    """Convert a Matplotlib figure to a PIL Image and return it"""
+    import io
+    buf = io.BytesIO()
+    fig.savefig(buf)
+    buf.seek(0)
+    img = Image.open(buf)
+    return img
+
+
+def visualize_detected_tables(img, det_tables, out_path=None):
+    plt.imshow(img, interpolation="lanczos")
+    fig = plt.gcf()
+    fig.set_size_inches(20, 20)
+    ax = plt.gca()
+
+    for det_table in det_tables:
+        bbox = det_table['bbox']
+
+        if det_table['label'] == 'table':
+            facecolor = (1, 0, 0.45)
+            edgecolor = (1, 0, 0.45)
+            alpha = 0.3
+            linewidth = 2
+            hatch='//////'
+        elif det_table['label'] == 'table rotated':
+            facecolor = (0.95, 0.6, 0.1)
+            edgecolor = (0.95, 0.6, 0.1)
+            alpha = 0.3
+            linewidth = 2
+            hatch='//////'
+        else:
+            continue
+
+        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=linewidth,
+                                    edgecolor='none',facecolor=facecolor, alpha=0.1)
+        ax.add_patch(rect)
+        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=linewidth,
+                                    edgecolor=edgecolor,facecolor='none',linestyle='-', alpha=alpha)
+        ax.add_patch(rect)
+        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=0,
+                                    edgecolor=edgecolor,facecolor='none',linestyle='-', hatch=hatch, alpha=0.2)
+        ax.add_patch(rect)
+
+    plt.xticks([], [])
+    plt.yticks([], [])
+
+    legend_elements = [Patch(facecolor=(1, 0, 0.45), edgecolor=(1, 0, 0.45),
+                                label='Table', hatch='//////', alpha=0.3),
+                        Patch(facecolor=(0.95, 0.6, 0.1), edgecolor=(0.95, 0.6, 0.1),
+                                label='Table (rotated)', hatch='//////', alpha=0.3)]
+    plt.legend(handles=legend_elements, bbox_to_anchor=(0.5, -0.02), loc='upper center', borderaxespad=0,
+                    fontsize=10, ncol=2)
+    plt.gcf().set_size_inches(10, 10)
+    plt.axis('off')
+
+    if out_path is not None:
+        plt.savefig(out_path, bbox_inches='tight', dpi=150)
+        plt.close()
+
+    return fig
+
+
 def main(image_paths):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -130,6 +196,11 @@ def main(image_paths):
     for path in image_paths:
         print(f"\nProcessing {path}")
         img = Image.open(path).convert("RGB")
+        
+        # Create output directory for predictions
+        img_path = Path(path)
+        output_dir = img_path.parent / f"{img_path.stem}_predicted"
+        output_dir.mkdir(exist_ok=True)
 
         # Table detection
         pixels = det_transform(img).unsqueeze(0).to(device)
@@ -137,6 +208,12 @@ def main(image_paths):
             det_out = det_model(pixels)
         tables = outputs_to_objects(det_out, img.size, det_id2label)
         print(f"Detected {len(tables)} table region(s):", tables)
+
+        # Save table detection visualization
+        if tables:
+            out_path = output_dir / f"{img_path.stem}_tables_detected.png"
+            visualize_detected_tables(img, tables, str(out_path))
+            print(f"Saved table detection visualization to {out_path}")
 
         # Crop and structure recognition
         crops = objects_to_crops(img, tables, det_thresholds)
@@ -148,6 +225,27 @@ def main(image_paths):
             cells = outputs_to_objects(struct_out, crop.size, struct_id2label)
             struct = extract_table_structure_data(cells)
             print(f"Rows: {len(struct['table_rows'])}, Columns: {len(struct['table_columns'])}")
+            
+            # Save the cropped table with structure visualization
+            out_path = output_dir / f"{img_path.stem}_table_{i}_structure.png"
+            plt.figure(figsize=(10, 10))
+            plt.imshow(crop)
+            
+            # Draw row and column lines
+            for row in struct['table_rows']:
+                bbox = row['bbox']
+                plt.axhline(y=bbox[1], color='blue', linestyle='-', alpha=0.3)
+                plt.axhline(y=bbox[3], color='blue', linestyle='-', alpha=0.3)
+            
+            for col in struct['table_columns']:
+                bbox = col['bbox']
+                plt.axvline(x=bbox[0], color='red', linestyle='-', alpha=0.3)
+                plt.axvline(x=bbox[2], color='red', linestyle='-', alpha=0.3)
+            
+            plt.axis('off')
+            plt.savefig(str(out_path), bbox_inches='tight', dpi=150)
+            plt.close()
+            print(f"Saved table structure visualization to {out_path}")
 
     print("Done.")
 
