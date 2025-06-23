@@ -9,6 +9,10 @@ from torchvision import transforms
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.patches import Patch
+import numpy as np
+import csv
+import easyocr
+from tqdm.auto import tqdm
 
 
 def ensure_local_model(repo_id: str, folder_name: str) -> Path:
@@ -234,18 +238,67 @@ def main(image_paths):
             # Draw row and column lines
             for row in struct['table_rows']:
                 bbox = row['bbox']
-                plt.axhline(y=bbox[1], color='blue', linestyle='-', alpha=0.3)
-                plt.axhline(y=bbox[3], color='blue', linestyle='-', alpha=0.3)
+                plt.axhline(y=bbox[1], color='blue', linestyle='-', alpha=0.5)
+                plt.axhline(y=bbox[3], color='blue', linestyle='-', alpha=0.5)
             
             for col in struct['table_columns']:
                 bbox = col['bbox']
-                plt.axvline(x=bbox[0], color='red', linestyle='-', alpha=0.3)
-                plt.axvline(x=bbox[2], color='red', linestyle='-', alpha=0.3)
+                plt.axvline(x=bbox[0], color='red', linestyle='-', alpha=0.5)
+                plt.axvline(x=bbox[2], color='red', linestyle='-', alpha=0.5)
             
             plt.axis('off')
             plt.savefig(str(out_path), bbox_inches='tight', dpi=150)
             plt.close()
             print(f"Saved table structure visualization to {out_path}")
+
+            # --- EasyOCR and CSV export ---
+            if struct['table_rows'] and struct['table_columns']:
+                # Sort rows and columns by their y/x coordinates
+                sorted_rows = sorted(struct['table_rows'], key=lambda r: (r['bbox'][1] + r['bbox'][3]) / 2)
+                sorted_cols = sorted(struct['table_columns'], key=lambda c: (c['bbox'][0] + c['bbox'][2]) / 2)
+                cell_coordinates = []
+                for row in sorted_rows:
+                    row_cells = []
+                    row_y1, row_y2 = row['bbox'][1], row['bbox'][3]
+                    for col in sorted_cols:
+                        col_x1, col_x2 = col['bbox'][0], col['bbox'][2]
+                        # Cell bbox: intersection of row and column
+                        cell_bbox = [col_x1, row_y1, col_x2, row_y2]
+                        row_cells.append({'cell': cell_bbox})
+                    cell_coordinates.append({'cells': row_cells})
+
+                reader = easyocr.Reader(['en'])
+                def apply_ocr(cell_coordinates, cropped_table):
+                    data = dict()
+                    max_num_columns = 0
+                    for idx, row in enumerate(tqdm(cell_coordinates)):
+                        row_text = []
+                        for cell in row["cells"]:
+                            cell_image = np.array(cropped_table.crop(cell["cell"]))
+                            result = reader.readtext(cell_image)
+                            if len(result) > 0:
+                                text = " ".join([x[1] for x in result])
+                                row_text.append(text)
+                            else:
+                                row_text.append("")
+                        if len(row_text) > max_num_columns:
+                            max_num_columns = len(row_text)
+                        data[idx] = row_text
+                    # Pad rows
+                    for row, row_data in data.copy().items():
+                        if len(row_data) != max_num_columns:
+                            row_data = row_data + ["" for _ in range(max_num_columns - len(row_data))]
+                        data[row] = row_data
+                    return data
+
+                print("Applying EasyOCR to table cells...")
+                ocr_data = apply_ocr(cell_coordinates, crop)
+                csv_path = output_dir / f"{img_path.stem}_table_{i}_ocr.csv"
+                with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.writer(csvfile)
+                    for row in ocr_data.values():
+                        writer.writerow(row)
+                print(f"Saved OCR CSV to {csv_path}")
 
     print("Done.")
 
